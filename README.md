@@ -491,3 +491,13 @@ This project demonstrates:
 - SQL join verification across normalized relational tables
 
 ---
+### Concurrency Test Result
+
+Product ID `2` was updated to stock quantity `1`. Two order requests were submitted at nearly the same time for the same product.
+
+Result:
+
+```text
+Request 1: 201 Created
+Request 2: 400 Bad Request
+Final stock: 0

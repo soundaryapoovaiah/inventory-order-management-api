@@ -536,3 +536,58 @@ Final product stock after concurrent requests:
 Customer order history showing only the successful order:
 
 ![Concurrency Order History](docs/screenshots/concurrency-order-history.png)
+
+
+## Advanced PostgreSQL Features
+
+This project includes a second Flyway migration to demonstrate PostgreSQL-specific database features beyond basic CRUD operations.
+
+Migration file:
+
+```text
+src/main/resources/db/migration/V2__postgresql_advanced_features.sql
+```
+
+The V2 migration adds:
+
+- PostgreSQL trigger
+- PL/pgSQL function
+- Database view
+- Automatic `updated_at` timestamp handling
+- Customer order summary reporting
+- Low-stock product reporting through a database function
+
+### Flyway Migration History
+
+```sql
+SELECT version, description, success
+FROM flyway_schema_history
+ORDER BY installed_rank;
+```
+
+Expected result:
+
+```text
+1 | inventory schema               | true
+2 | postgresql advanced features   | true
+```
+
+### Customer Order Summary View
+
+The `customer_order_summary` view summarizes total orders, total spending, and last order date per customer.
+
+```sql
+SELECT * FROM customer_order_summary;
+```
+
+### Low-Stock PostgreSQL Function
+
+The `get_low_stock_products()` function returns products below a given stock threshold.
+
+```sql
+SELECT * FROM get_low_stock_products(50);
+```
+
+### V2 Migration Verification
+
+![PostgreSQL V2 Migration Verification](docs/screenshots/postgresql-v2-migration.png)

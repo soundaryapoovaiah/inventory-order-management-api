@@ -493,11 +493,46 @@ This project demonstrates:
 ---
 ### Concurrency Test Result
 
-Product ID `2` was updated to stock quantity `1`. Two order requests were submitted at nearly the same time for the same product.
+## Concurrency Handling
+
+Order placement uses transaction-level row locking to prevent overselling during concurrent purchases.
+
+The `ProductRepository` uses pessimistic locking:
+
+```java
+@Lock(LockModeType.PESSIMISTIC_WRITE)
+@Query("SELECT p FROM Product p WHERE p.productId = :productId")
+Optional<Product> findByIdForUpdate(@Param("productId") Long productId);
+```
+
+During order placement, each product row is locked before stock validation and inventory deduction. This prevents two concurrent transactions from reading the same stock quantity and overselling the product.
+
+The order service also sorts product IDs before acquiring locks to reduce deadlock risk when an order contains multiple products.
+
+### Concurrency Test Result
+
+To validate concurrency-safe stock updates, product ID `2` was updated to stock quantity `1`. Two order requests were submitted at nearly the same time for the same product.
 
 Result:
 
 ```text
-Request 1: 201 Created
-Request 2: 400 Bad Request
-Final stock: 0
+Request 1: HTTP_STATUS:201
+Request 2: HTTP_STATUS:400
+Final stock quantity: 0
+```
+
+This confirms that pessimistic row-level locking prevents two concurrent transactions from overselling the same product.
+
+### Concurrency Test Evidence
+
+PowerShell concurrency test showing one successful request and one failed request:
+
+![Concurrency Terminal Result](docs/screenshots/concurrency-terminal.png)
+
+Final product stock after concurrent requests:
+
+![Concurrency Final Stock](docs/screenshots/concurrency-final-stock.png)
+
+Customer order history showing only the successful order:
+
+![Concurrency Order History](docs/screenshots/concurrency-order-history.png)

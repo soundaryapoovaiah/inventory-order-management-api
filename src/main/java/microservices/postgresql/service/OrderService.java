@@ -15,9 +15,11 @@ import microservices.postgresql.repository.ProductRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Comparator;
 
 @Service
 @RequiredArgsConstructor
@@ -41,8 +43,13 @@ public class OrderService {
         List<OrderItem> orderItems = new ArrayList<>();
         BigDecimal totalAmount = BigDecimal.ZERO;
 
-        for (OrderItemRequest itemRequest : request.getItems()) {
-            Product product = productRepository.findById(itemRequest.getProductId())
+        List<OrderItemRequest> sortedItems = request.getItems()
+                .stream()
+                .sorted(Comparator.comparing(OrderItemRequest::getProductId))
+                .toList();
+
+        for (OrderItemRequest itemRequest : sortedItems) {
+            Product product = productRepository.findByIdForUpdate(itemRequest.getProductId())
                     .orElseThrow(() -> new RuntimeException("Product not found with id: " + itemRequest.getProductId()));
 
             if (product.getStockQuantity() < itemRequest.getQuantity()) {
@@ -68,6 +75,7 @@ public class OrderService {
             orderItems.add(orderItem);
             totalAmount = totalAmount.add(lineTotal);
         }
+
 
         order.setOrderItems(orderItems);
         order.setTotalAmount(totalAmount);

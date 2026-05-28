@@ -491,9 +491,3 @@ This project demonstrates:
 - SQL join verification across normalized relational tables
 
 ---
-
-## Resume Bullets
-
-- Built an inventory and order management REST API using Java, Spring Boot, PostgreSQL, Docker, Spring Data JPA, and Flyway to manage products, customers, inventory stock, and customer orders.
-- Implemented transactional order placement logic with customer validation, product validation, stock checks, inventory updates, total amount calculation, and rollback handling to maintain database consistency.
-- Designed normalized PostgreSQL schemas with primary keys, foreign keys, constraints, indexes, and join queries to support product search, customer order history, low-stock reporting, and paginated APIs.

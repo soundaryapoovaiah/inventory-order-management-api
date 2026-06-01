@@ -577,4 +577,8 @@ docs
 ```
 
 ---
+---
+## Author
 
+**Soundarya Kookanda**  
+Java Backend Developer focused on Spring Boot, PostgreSQL, cloud-ready backend systems and AI-integrated enterprise applications.

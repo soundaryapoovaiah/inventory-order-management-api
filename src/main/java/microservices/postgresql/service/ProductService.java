@@ -11,6 +11,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 
 import java.util.List;
 
@@ -43,14 +45,18 @@ public class ProductService {
                 .toList();
     }
 
+    @Cacheable(value = "productById", key = "#productId")
     @Transactional(readOnly = true)
     public ProductResponse getProductById(Long productId) {
+        System.out.println("DB HIT: Fetching product from PostgreSQL for productId = " + productId);
+
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new RuntimeException("Product not found with id: " + productId));
 
         return mapToResponse(product);
     }
 
+    @CacheEvict(value = "productById", key = "#productId")
     @Transactional
     public ProductResponse updateProduct(Long productId, ProductRequest request) {
         Product product = productRepository.findById(productId)
@@ -67,6 +73,7 @@ public class ProductService {
         return mapToResponse(updatedProduct);
     }
 
+    @CacheEvict(value = "productById", key = "#productId")
     @Transactional
     public void deleteProduct(Long productId) {
         if (!productRepository.existsById(productId)) {

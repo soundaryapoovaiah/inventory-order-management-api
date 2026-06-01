@@ -15,7 +15,7 @@ import microservices.postgresql.repository.ProductRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import microservices.postgresql.exception.DuplicateOrderRequestException;
-import microservices.postgresql.messaging.OrderEventPublisher;
+import microservices.postgresql.service.OutboxEventService;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -29,7 +29,7 @@ public class OrderService {
     private final CustomerOrderRepository customerOrderRepository;
     private final CustomerRepository customerRepository;
     private final ProductRepository productRepository;
-    private final OrderEventPublisher orderEventPublisher;
+    private final OutboxEventService outboxEventService;
 
     @Transactional
     public OrderResponse placeOrder(OrderRequest request, String idempotencyKey) {
@@ -91,7 +91,7 @@ public class OrderService {
         order.setTotalAmount(totalAmount);
 
         CustomerOrder savedOrder = customerOrderRepository.save(order);
-        orderEventPublisher.publishOrderCreated(savedOrder);
+        outboxEventService.saveOrderCreatedEvent(savedOrder);
         return mapToResponse(savedOrder);
     }
 

@@ -28,6 +28,8 @@ public class CustomerOrder {
 
     @Column(name = "order_status", nullable = false, length = 30)
     private String orderStatus;
+    @Column(name = "idempotency_key", length = 100, unique = true)
+    private String idempotencyKey;
 
     @Column(name = "total_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal totalAmount;

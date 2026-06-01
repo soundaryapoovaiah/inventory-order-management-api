@@ -14,7 +14,7 @@ import microservices.postgresql.repository.CustomerRepository;
 import microservices.postgresql.repository.ProductRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import microservices.postgresql.exception.DuplicateOrderRequestException;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -30,12 +30,20 @@ public class OrderService {
     private final ProductRepository productRepository;
 
     @Transactional
-    public OrderResponse placeOrder(OrderRequest request) {
+    public OrderResponse placeOrder(OrderRequest request, String idempotencyKey) {
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            customerOrderRepository.findByIdempotencyKey(idempotencyKey)
+                    .ifPresent(existingOrder -> {
+                        throw new DuplicateOrderRequestException(existingOrder.getOrderId());
+                    });
+        }
         Customer customer = customerRepository.findById(request.getCustomerId())
-                .orElseThrow(() -> new RuntimeException("Customer not found with id: " + request.getCustomerId()));
-
+                .orElseThrow(() -> new RuntimeException(
+                        "Customer not found with id: " + request.getCustomerId()
+                ));
         CustomerOrder order = CustomerOrder.builder()
                 .customer(customer)
+                .idempotencyKey(idempotencyKey)
                 .orderStatus("PLACED")
                 .totalAmount(BigDecimal.ZERO)
                 .build();

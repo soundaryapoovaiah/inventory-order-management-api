@@ -1,105 +1,104 @@
-# Inventory and Order Management API
+# Inventory Order Management API
 
-A backend REST API built with Java, Spring Boot, PostgreSQL, Spring Data JPA, Flyway, and Docker.
+![Java CI](https://github.com/soundaryapoovaiah/inventory-order-management-api/actions/workflows/ci.yml/badge.svg)
 
-The project manages products, customers, inventory stock, and customer orders with transactional stock updates. It demonstrates real-world backend development concepts such as REST API design, PostgreSQL schema modeling, database migrations, transaction management, pagination, sorting, error handling, and SQL verification.
+Production-style Java backend project built with **Spring Boot, PostgreSQL, Redis, Kafka, Docker, Flyway, GitHub Actions, Testcontainers, Prometheus, and Grafana**.
+
+This project started as an inventory and order management REST API and was upgraded into a distributed backend system that demonstrates real-world engineering patterns used in enterprise and large-scale systems: transaction-safe inventory updates, idempotent order creation, Redis caching, Kafka event publishing, transactional outbox, CI validation, integration testing, and observability.
+
+---
+
+## Why This Project Matters
+
+This is not only a CRUD API. It demonstrates backend engineering concepts that are expected in Java developer roles at Fortune 500 companies and large technology teams:
+
+- Transaction-safe order placement using PostgreSQL row-level locking
+- Duplicate order prevention using idempotency keys
+- Redis caching for high-read product lookup APIs
+- Kafka-based asynchronous event publishing
+- Transactional outbox pattern for reliable event delivery
+- PostgreSQL schema migrations using Flyway
+- Testcontainers integration testing with real PostgreSQL
+- GitHub Actions CI pipeline
+- Spring Boot Actuator, Prometheus, and Grafana observability
+- Swagger/OpenAPI API documentation
 
 ---
 
 ## Tech Stack
 
-- Java
-- Spring Boot
-- Spring Web
-- Spring Data JPA
-- PostgreSQL
-- Flyway Migration
-- Docker Compose
-- Hibernate Validator
-- Lombok
-- Postman
-- Maven
+| Area | Technology |
+|---|---|
+| Language | Java 17 |
+| Backend | Spring Boot, Spring Web, Spring Data JPA |
+| Database | PostgreSQL |
+| Migration | Flyway |
+| Caching | Redis |
+| Messaging | Apache Kafka |
+| Reliability Pattern | Transactional Outbox |
+| Testing | JUnit, Testcontainers |
+| CI/CD | GitHub Actions |
+| Observability | Spring Boot Actuator, Micrometer, Prometheus, Grafana |
+| Documentation | Swagger/OpenAPI |
+| Containerization | Docker, Docker Compose |
+| Build Tool | Maven |
 
 ---
 
-## Project Overview
-
-This project simulates a small inventory and order management backend system.
-
-It supports:
-
-- Product management
-- Customer management
-- Multi-item order placement
-- Transactional inventory updates
-- Stock validation
-- Low-stock reporting
-- Pagination and sorting
-- PostgreSQL schema design with indexes and foreign keys
-- Clean API error handling
-- SQL-based verification of database relationships
-
----
-
-## Architecture
+## System Architecture
 
 ```text
-Client / Postman
-      |
-      v
+Client / Postman / Swagger
+        |
+        v
 Spring Boot REST Controllers
-      |
-      v
+        |
+        v
 Service Layer
-      |
-      v
-Spring Data JPA Repository Layer
-      |
-      v
-PostgreSQL Database running in Docker
+        |
+        +-----------------------------+
+        |                             |
+        v                             v
+PostgreSQL                      Redis Cache
+Products, Customers,            Product lookup cache
+Orders, Order Items,
+Outbox Events
+        |
+        v
+Scheduled Outbox Publisher
+        |
+        v
+Apache Kafka
+order.created topic
+        |
+        v
+Downstream consumers
 ```
 
 ---
 
-## Database Tables
-
-The database contains the following tables:
+## Core Order Flow
 
 ```text
-products
-customers
-orders
-order_items
-flyway_schema_history
+1. Customer submits an order through POST /api/orders
+2. API validates customer and product details
+3. Product rows are locked using PostgreSQL pessimistic locking
+4. Stock availability is checked inside a transaction
+5. Inventory is deducted safely
+6. Order and order items are saved
+7. Order-created event is saved into outbox_events table
+8. Scheduled outbox publisher sends the event to Kafka
+9. Outbox event is marked as PUBLISHED
+10. Prometheus and Grafana monitor application metrics
 ```
 
 ---
 
-## Entity Relationships
+## Key Features
 
-```text
-One customer can have many orders.
-One order can have many order items.
-One order item belongs to one product.
-```
+### 1. Product and Customer APIs
 
-Relationship flow:
-
-```text
-customers.customer_id
-        ↓
-orders.customer_id
-        ↓
-order_items.order_id
-        ↓
-products.product_id
-```
-
----
-
-## Features
-
-### Product APIs
+The application supports product and customer management with validation, pagination, sorting, filtering, and clean error handling.
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -112,48 +111,262 @@ products.product_id
 | GET | `/api/products/search?name=mouse` | Search products by name |
 | GET | `/api/products/low-stock?threshold=10` | Get low-stock products |
 | GET | `/api/products/paged?page=0&size=5&sortBy=productId&sortDirection=asc` | Get paginated products |
-
-### Customer APIs
-
-| Method | Endpoint | Description |
-|---|---|---|
 | POST | `/api/customers` | Create customer |
 | GET | `/api/customers` | Get all customers |
 | GET | `/api/customers/{customerId}` | Get customer by ID |
-| GET | `/api/customers/email?email=john@example.com` | Get customer by email |
 | PUT | `/api/customers/{customerId}` | Update customer |
 | DELETE | `/api/customers/{customerId}` | Delete customer |
 
-### Order APIs
+### 2. Transaction-Safe Order Placement
+
+Order placement runs inside a database transaction and protects inventory consistency.
 
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/orders` | Place order |
 | GET | `/api/orders/{orderId}` | Get order by ID |
-| GET | `/api/orders/customer/{customerId}` | Get all orders for a customer |
+| GET | `/api/orders/customer/{customerId}` | Get customer order history |
 
----
+Order placement validates the customer, validates each product, checks stock, deducts inventory, calculates order totals, saves order items, and rolls back if any step fails.
 
-## Core Business Logic
+### 3. Concurrency Handling
 
-The order placement API performs the following operations inside a transaction:
+The system prevents overselling during concurrent checkout requests using PostgreSQL row-level pessimistic locking.
 
-```text
-1. Validate customer exists
-2. Validate each product exists
-3. Check available stock
-4. Reduce product stock
-5. Calculate line item totals
-6. Calculate total order amount
-7. Save order and order items
-8. Roll back if any step fails
+```java
+@Lock(LockModeType.PESSIMISTIC_WRITE)
+@Query("SELECT p FROM Product p WHERE p.productId = :productId")
+Optional<Product> findByIdForUpdate(@Param("productId") Long productId);
 ```
 
-This prevents invalid orders and protects inventory consistency.
+Concurrency proof:
+
+```text
+Request 1: HTTP_STATUS:201
+Request 2: HTTP_STATUS:400
+Final stock quantity: 0
+```
+
+![Concurrency terminal result](docs/screenshots/concurrency-terminal.png)
+
+![Concurrency final stock](docs/screenshots/concurrency-final-stock.png)
+
+### 4. Idempotent Order Creation
+
+The API supports an `Idempotency-Key` request header to prevent duplicate order creation when a client retries the same request.
+
+```http
+POST /api/orders
+Idempotency-Key: demo-order-001
+```
+
+Expected behavior:
+
+```text
+First request  -> 201 Created
+Second request -> 200 OK with same orderId
+```
+
+![Idempotency duplicate order](docs/screenshots/idempotency-duplicate-order.png)
+
+### 5. Redis Caching
+
+Product lookup uses Redis caching to reduce repeated PostgreSQL reads for frequently accessed products.
+
+```text
+GET /api/products/3
+```
+
+First request hits PostgreSQL. Repeated requests return from Redis until the cache expires or the product is updated/deleted.
+
+Redis verification:
+
+```text
+productById::3
+```
+
+![Redis cache key](docs/screenshots/redis-cache-key.png)
+
+### 6. Kafka Event Publishing
+
+When an order is placed, the system publishes an `order.created` event to Kafka.
+
+```text
+Topic: order.created
+Key: orderId
+Value: order-created JSON payload
+```
+
+Example event:
+
+```json
+{
+  "orderId": 5,
+  "customerId": 1,
+  "customerName": "John Smith Updated",
+  "orderStatus": "PLACED",
+  "totalAmount": 25.99,
+  "items": [
+    {
+      "productId": 3,
+      "productName": "Keyboard",
+      "quantity": 1,
+      "unitPrice": 25.99
+    }
+  ]
+}
+```
+
+![Kafka order-created event](docs/screenshots/kafka-order-created-event.png)
+
+### 7. Transactional Outbox Pattern
+
+The project uses the transactional outbox pattern to avoid inconsistencies between PostgreSQL and Kafka.
+
+Instead of publishing directly to Kafka inside the order transaction, the application saves an event to the `outbox_events` table in the same transaction as the order. A scheduled publisher later reads pending outbox events, publishes them to Kafka, and marks them as `PUBLISHED`.
+
+```text
+Order transaction
+    |
+    +-- Save order
+    +-- Save outbox event with status PENDING
+
+Scheduled publisher
+    |
+    +-- Read PENDING events
+    +-- Publish to Kafka
+    +-- Mark as PUBLISHED
+```
+
+Outbox verification:
+
+```sql
+SELECT aggregate_id, event_type, status, topic
+FROM outbox_events
+ORDER BY created_at DESC
+LIMIT 5;
+```
+
+![Outbox event published](docs/screenshots/outbox-event-published.png)
+
+### 8. API Documentation with Swagger
+
+Swagger/OpenAPI is enabled for API testing and documentation.
+
+```text
+http://localhost:8080/swagger-ui.html
+```
+
+![Swagger API](docs/screenshots/swagger-api.png)
+
+### 9. CI Pipeline with GitHub Actions
+
+Every push to `main` runs a GitHub Actions workflow that builds the project and runs tests.
+
+![GitHub Actions success](docs/screenshots/github-actions-success.png)
+
+### 10. Testcontainers Integration Testing
+
+The project includes integration tests that run against a real PostgreSQL container using Testcontainers. This validates database connectivity, JPA mappings, repository behavior, and migration compatibility.
+
+![Testcontainers build success](docs/screenshots/testcontainers-build-success.png)
+
+### 11. Observability with Prometheus and Grafana
+
+Spring Boot Actuator exposes metrics through `/actuator/prometheus`. Prometheus scrapes those metrics, and Grafana visualizes request rate and JVM memory usage.
+
+```text
+Spring Boot Actuator -> Prometheus -> Grafana
+```
+
+Prometheus target health:
+
+![Prometheus target up](docs/screenshots/prometheus-target-up.png)
+
+Grafana dashboard:
+
+![Grafana dashboard](docs/screenshots/grafana-dashboard.png)
 
 ---
 
-## Example Product Request
+## Database Schema
+
+The project uses normalized relational tables with constraints, indexes, and Flyway migrations.
+
+```text
+products
+customers
+orders
+order_items
+outbox_events
+flyway_schema_history
+```
+
+Relationship flow:
+
+```text
+customers.customer_id
+        |
+        v
+orders.customer_id
+        |
+        v
+order_items.order_id
+        |
+        v
+products.product_id
+```
+
+Outbox flow:
+
+```text
+orders.order_id
+        |
+        v
+outbox_events.aggregate_id
+        |
+        v
+Kafka topic: order.created
+```
+
+---
+
+## Flyway Migrations
+
+| Version | Description |
+|---|---|
+| V1 | Inventory schema |
+| V2 | PostgreSQL advanced features |
+| V3 | Add order idempotency key |
+| V4 | Create outbox events table |
+
+---
+
+## PostgreSQL Advanced Features
+
+The project includes PostgreSQL-specific features beyond basic CRUD:
+
+- PL/pgSQL function
+- Database trigger
+- Database view
+- Automatic `updated_at` timestamp handling
+- Customer order summary reporting
+- Low-stock product reporting
+
+V2 migration verification:
+
+![PostgreSQL V2 migration](docs/screenshots/postgresql-v2-migration.png)
+
+---
+
+## API Examples
+
+### Create Product
+
+```http
+POST /api/products
+Content-Type: application/json
+```
 
 ```json
 {
@@ -165,9 +378,12 @@ This prevents invalid orders and protects inventory consistency.
 }
 ```
 
----
+### Create Customer
 
-## Example Customer Request
+```http
+POST /api/customers
+Content-Type: application/json
+```
 
 ```json
 {
@@ -178,18 +394,18 @@ This prevents invalid orders and protects inventory consistency.
 }
 ```
 
----
+### Place Order
 
-## Example Order Request
+```http
+POST /api/orders
+Content-Type: application/json
+Idempotency-Key: order-001
+```
 
 ```json
 {
   "customerId": 1,
   "items": [
-    {
-      "productId": 2,
-      "quantity": 2
-    },
     {
       "productId": 3,
       "quantity": 1
@@ -198,218 +414,55 @@ This prevents invalid orders and protects inventory consistency.
 }
 ```
 
----
-
-## Example Error Response
+### Example Error Response
 
 ```json
 {
   "status": 400,
-  "message": "Product not found with id: 1",
+  "message": "Insufficient stock for product: Wireless Mouse. Available: 0, Requested: 1",
   "path": "/api/orders",
-  "timestamp": "2026-05-28T15:05:30"
+  "timestamp": "2026-06-01T16:14:53"
 }
 ```
 
 ---
 
-## API Testing Screenshots
+## Running Locally
 
-The APIs were tested using Postman, and database results were verified directly in PostgreSQL using SQL queries.
+### Prerequisites
 
-### Product Creation API
+Install:
 
-```http
-POST /api/products
-```
+- Java 17
+- Docker Desktop
+- Maven Wrapper is included in the project
 
-![Product Create API](docs/screenshots/product-create.png)
-
-### Get Products API
-
-```http
-GET /api/products
-```
-
-![Get Products API](docs/screenshots/product-get-all.png)
-
-### Get Product by ID API
-
-```http
-GET /api/products/{productId}
-```
-
-![Get Product By ID API](docs/screenshots/product-get-by-id.png)
-
-### Product Search by Category API
-
-```http
-GET /api/products/category/{category}
-```
-
-![Product Category Search API](docs/screenshots/product-category-search.png)
-
-### Product Search by Name API
-
-```http
-GET /api/products/search?name=mouse
-```
-
-![Product Name Search API](docs/screenshots/product-name-search.png)
-
-### Low Stock Products API
-
-```http
-GET /api/products/low-stock?threshold=10
-```
-
-![Low Stock API](docs/screenshots/product-low-stock.png)
-
-### Product Update API
-
-```http
-PUT /api/products/{productId}
-```
-
-![Product Update API](docs/screenshots/product-update.png)
-
-### Customer Creation API
-
-```http
-POST /api/customers
-```
-
-![Customer Create API](docs/screenshots/customer-create.png)
-
-### Customer Update API
-
-```http
-PUT /api/customers/{customerId}
-```
-
-![Customer Update API](docs/screenshots/customer-update.png)
-
-### Order Placement API
-
-```http
-POST /api/orders
-```
-
-This API validates the customer, checks product availability, reduces stock, calculates total amount, and saves order items inside a transaction.
-
-![Order Create API](docs/screenshots/order-create.png)
-
-### Customer Order History API
-
-```http
-GET /api/orders/customer/{customerId}
-```
-
-![Order History API](docs/screenshots/order-history.png)
-
-### Error Handling Response
-
-The application returns clean JSON error responses for invalid requests.
-
-```http
-POST /api/orders
-```
-
-![Error Response](docs/screenshots/error-response.png)
-
-### Paginated Product API
-
-```http
-GET /api/products/paged?page=0&size=2&sortBy=productId&sortDirection=asc
-```
-
-![Product Pagination API](docs/screenshots/product-pagination.png)
-
-### PostgreSQL Join Verification
-
-The order, customer, product, and order item relationships were verified using a SQL join query.
-
-![SQL Join Result](docs/screenshots/sql-join-result.png)
-
----
-
-## Full API Testing Documentation
-
-Detailed API testing screenshots and PostgreSQL verification steps are available in the project documentation.
-
-[View API Testing Documentation](docs/PostgreSQL_API_Testing_Documentation.docx)
-
----
-
-## PostgreSQL Schema Highlights
-
-The project uses:
-
-- Primary keys
-- Foreign keys
-- Unique constraints
-- Check constraints
-- Indexes
-- Join queries
-- Transactional updates
-
-Indexes created:
-
-```sql
-CREATE INDEX idx_products_category ON products(category);
-CREATE INDEX idx_products_name ON products(name);
-CREATE INDEX idx_customers_email ON customers(email);
-CREATE INDEX idx_orders_customer_id ON orders(customer_id);
-CREATE INDEX idx_order_items_order_id ON order_items(order_id);
-CREATE INDEX idx_order_items_product_id ON order_items(product_id);
-```
-
----
-
-## Important SQL Join Query
-
-```sql
-SELECT 
-    o.order_id,
-    c.name AS customer_name,
-    p.name AS product_name,
-    oi.quantity,
-    oi.unit_price,
-    oi.quantity * oi.unit_price AS line_total,
-    o.total_amount,
-    o.order_status,
-    o.created_at
-FROM orders o
-JOIN customers c ON o.customer_id = c.customer_id
-JOIN order_items oi ON o.order_id = oi.order_id
-JOIN products p ON oi.product_id = p.product_id
-ORDER BY o.created_at DESC;
-```
-
----
-
-## Running the Project Locally
-
-### 1. Clone the repository
+### 1. Clone Repository
 
 ```bash
 git clone https://github.com/soundaryapoovaiah/inventory-order-management-api.git
 cd inventory-order-management-api
 ```
 
-### 2. Start PostgreSQL using Docker
+### 2. Start Infrastructure
 
 ```bash
 docker compose up -d
 ```
 
-### 3. Verify PostgreSQL container
+This starts:
 
-```bash
-docker ps
+```text
+PostgreSQL -> localhost:5432
+Redis      -> localhost:6379
+Kafka      -> localhost:9092
+Prometheus -> localhost:9090
+Grafana    -> localhost:3000
 ```
 
-### 4. Run Spring Boot application
+### 3. Run Spring Boot App
+
+On macOS/Linux:
 
 ```bash
 ./mvnw spring-boot:run
@@ -417,37 +470,66 @@ docker ps
 
 On Windows PowerShell:
 
-```bash
+```powershell
 .\mvnw spring-boot:run
 ```
 
-### 5. Application URL
+### 4. Open Services
+
+| Service | URL |
+|---|---|
+| API Base URL | `http://localhost:8080` |
+| Swagger UI | `http://localhost:8080/swagger-ui.html` |
+| Actuator Health | `http://localhost:8080/actuator/health` |
+| Prometheus Metrics | `http://localhost:8080/actuator/prometheus` |
+| Prometheus UI | `http://localhost:9090/targets` |
+| Grafana UI | `http://localhost:3000` |
+
+Grafana login:
 
 ```text
-http://localhost:8080
+Username: admin
+Password: admin
 ```
 
 ---
 
-## PostgreSQL Connection Details
+## Useful Verification Commands
 
-```text
-Database: inventory_db
-Username: inventory_user
-Password: inventory_pass
-Port: 5432
+### Check Docker Containers
+
+```bash
+docker ps
 ```
 
----
+### Check Redis Cache Keys
 
-## Flyway Migration
+```bash
+docker exec -it inventory-redis redis-cli KEYS "*"
+```
 
-Database tables are created using Flyway migration.
+### Consume Kafka Order Events
 
-Migration file:
+```bash
+docker exec -it inventory-kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic order.created --from-beginning --max-messages 1
+```
 
-```text
-src/main/resources/db/migration/V1__inventory_schema.sql
+### Verify Outbox Events
+
+```bash
+docker exec -it inventory-postgres psql -U inventory_user -d inventory_db -c "SELECT aggregate_id, event_type, status, topic FROM outbox_events ORDER BY created_at DESC LIMIT 5;"
+```
+
+### Run Tests
+
+```bash
+./mvnw clean test -Dspring.docker.compose.enabled=false
+```
+
+On Windows PowerShell:
+
+```powershell
+.\mvnw clean test "-Dspring.docker.compose.enabled=false"
 ```
 
 ---
@@ -456,138 +538,43 @@ src/main/resources/db/migration/V1__inventory_schema.sql
 
 ```text
 src/main/java/microservices/postgresql
+├── config
+│   ├── JacksonConfig.java
+│   └── KafkaProducerConfig.java
 ├── controller
 ├── dto
 ├── entity
+│   ├── Customer.java
+│   ├── CustomerOrder.java
+│   ├── OrderItem.java
+│   ├── OutboxEvent.java
+│   └── Product.java
+├── event
+│   └── OrderCreatedEvent.java
 ├── exception
+├── messaging
+│   └── OutboxEventPublisher.java
 ├── repository
 ├── service
 └── PostgreSqlApplication.java
 
 src/main/resources
-├── db/migration/V1__inventory_schema.sql
+├── db/migration
+│   ├── V1__inventory_schema.sql
+│   ├── V2__postgresql_advanced_features.sql
+│   ├── V3__add_order_idempotency_key.sql
+│   └── V4__create_outbox_events_table.sql
 └── application.properties
 
+monitoring
+└── prometheus.yml
+
+.github/workflows
+└── ci.yml
+
 docs
-├── screenshots
-└── PostgreSQL_API_Testing_Documentation.docx
+└── screenshots
 ```
 
 ---
 
-## Key Learning Outcomes
-
-This project demonstrates:
-
-- REST API development using Spring Boot
-- PostgreSQL database design
-- Transaction management using `@Transactional`
-- Spring Data JPA repository methods
-- Docker-based local database setup
-- Flyway database migration
-- Pagination and sorting
-- Global exception handling
-- Real-world backend service layering
-- SQL join verification across normalized relational tables
-
----
-### Concurrency Test Result
-
-## Concurrency Handling
-
-Order placement uses transaction-level row locking to prevent overselling during concurrent purchases.
-
-The `ProductRepository` uses pessimistic locking:
-
-```java
-@Lock(LockModeType.PESSIMISTIC_WRITE)
-@Query("SELECT p FROM Product p WHERE p.productId = :productId")
-Optional<Product> findByIdForUpdate(@Param("productId") Long productId);
-```
-
-During order placement, each product row is locked before stock validation and inventory deduction. This prevents two concurrent transactions from reading the same stock quantity and overselling the product.
-
-The order service also sorts product IDs before acquiring locks to reduce deadlock risk when an order contains multiple products.
-
-### Concurrency Test Result
-
-To validate concurrency-safe stock updates, product ID `2` was updated to stock quantity `1`. Two order requests were submitted at nearly the same time for the same product.
-
-Result:
-
-```text
-Request 1: HTTP_STATUS:201
-Request 2: HTTP_STATUS:400
-Final stock quantity: 0
-```
-
-This confirms that pessimistic row-level locking prevents two concurrent transactions from overselling the same product.
-
-### Concurrency Test Evidence
-
-PowerShell concurrency test showing one successful request and one failed request:
-
-![Concurrency Terminal Result](docs/screenshots/concurrency-terminal.png)
-
-Final product stock after concurrent requests:
-
-![Concurrency Final Stock](docs/screenshots/concurrency-final-stock.png)
-
-Customer order history showing only the successful order:
-
-![Concurrency Order History](docs/screenshots/concurrency-order-history.png)
-
-
-## Advanced PostgreSQL Features
-
-This project includes a second Flyway migration to demonstrate PostgreSQL-specific database features beyond basic CRUD operations.
-
-Migration file:
-
-```text
-src/main/resources/db/migration/V2__postgresql_advanced_features.sql
-```
-
-The V2 migration adds:
-
-- PostgreSQL trigger
-- PL/pgSQL function
-- Database view
-- Automatic `updated_at` timestamp handling
-- Customer order summary reporting
-- Low-stock product reporting through a database function
-
-### Flyway Migration History
-
-```sql
-SELECT version, description, success
-FROM flyway_schema_history
-ORDER BY installed_rank;
-```
-
-Expected result:
-
-```text
-1 | inventory schema               | true
-2 | postgresql advanced features   | true
-```
-
-### Customer Order Summary View
-
-The `customer_order_summary` view summarizes total orders, total spending, and last order date per customer.
-
-```sql
-SELECT * FROM customer_order_summary;
-```
-
-### Low-Stock PostgreSQL Function
-
-The `get_low_stock_products()` function returns products below a given stock threshold.
-
-```sql
-SELECT * FROM get_low_stock_products(50);
-```
-
-### V2 Migration Verification
-
-![PostgreSQL V2 Migration Verification](docs/screenshots/postgresql-v2-migration.png)

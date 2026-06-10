@@ -44,9 +44,6 @@ This is not only a CRUD API. It demonstrates backend engineering concepts that a
 | Build Tool | Maven |
 
 ---
-
-## System Architecture
-:::writing{variant="standard" id="72841"}
 ## System Architecture
 
 <p align="center">

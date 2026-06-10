@@ -1,10 +1,10 @@
 # Inventory Order Management API
 
-![Java CI](https://github.com/soundaryapoovaiah/inventory-order-management-api/actions/workflows/ci.yml/badge.svg)
+![Java CI](https://github.com/soundaryaapoovaiah/inventory-order-management-api/actions/workflows/ci.yml/badge.svg)
 
-Production-style Java backend project built with **Spring Boot, PostgreSQL, Redis, Kafka, Docker, Flyway, GitHub Actions, Testcontainers, Prometheus, and Grafana**.
+Production-style **event-driven Java backend system** built with **Spring Boot, PostgreSQL, Redis, Kafka, Docker, Flyway, GitHub Actions, Testcontainers, Prometheus, Grafana, and a separate Notification Service**.
 
-This project started as an inventory and order management REST API and was upgraded into a distributed backend system that demonstrates real-world engineering patterns used in enterprise and large-scale systems: transaction-safe inventory updates, idempotent order creation, Redis caching, Kafka event publishing, transactional outbox, CI validation, integration testing, and observability.
+This project started as an inventory and order management REST API and was upgraded into a distributed backend system that demonstrates real-world engineering patterns used in enterprise and large-scale systems: transaction-safe inventory updates, idempotent order creation, Redis caching, Kafka event publishing, transactional outbox, distributed event consumption, CI validation, integration testing, and observability.
 
 ---
 
@@ -12,53 +12,54 @@ This project started as an inventory and order management REST API and was upgra
 
 This is not only a CRUD API. It demonstrates backend engineering concepts that are expected in Java developer roles at Fortune 500 companies and large technology teams:
 
-- Transaction-safe order placement using PostgreSQL row-level locking
-- Duplicate order prevention using idempotency keys
-- Redis caching for high-read product lookup APIs
-- Kafka-based asynchronous event publishing
-- Transactional outbox pattern for reliable event delivery
-- PostgreSQL schema migrations using Flyway
-- Testcontainers integration testing with real PostgreSQL
-- GitHub Actions CI pipeline
-- Spring Boot Actuator, Prometheus, and Grafana observability
-- Swagger/OpenAPI API documentation
+* Transaction-safe order placement using PostgreSQL row-level locking
+* Duplicate order prevention using idempotency keys
+* Redis caching for high-read product lookup APIs
+* Kafka-based asynchronous event publishing
+* Transactional outbox pattern for reliable event delivery
+* Separate Notification Service consuming `order.created` events from Kafka
+* Dockerized service architecture using Docker Compose
+* PostgreSQL schema migrations using Flyway
+* Testcontainers integration testing with real PostgreSQL
+* GitHub Actions CI pipeline
+* Spring Boot Actuator, Prometheus, and Grafana observability
+* Swagger/OpenAPI API documentation
 
 ---
 
 ## Tech Stack
 
-| Area | Technology |
-|---|---|
-| Language | Java 17 |
-| Backend | Spring Boot, Spring Web, Spring Data JPA |
-| Database | PostgreSQL |
-| Migration | Flyway |
-| Caching | Redis |
-| Messaging | Apache Kafka |
-| Reliability Pattern | Transactional Outbox |
-| Testing | JUnit, Testcontainers |
-| CI/CD | GitHub Actions |
-| Observability | Spring Boot Actuator, Micrometer, Prometheus, Grafana |
-| Documentation | Swagger/OpenAPI |
-| Containerization | Docker, Docker Compose |
-| Build Tool | Maven |
+| Area                | Technology                                            |
+| ------------------- | ----------------------------------------------------- |
+| Language            | Java 17                                               |
+| Backend             | Spring Boot, Spring Web, Spring Data JPA              |
+| Services            | Order Management API, Notification Service            |
+| Database            | PostgreSQL                                            |
+| Migration           | Flyway                                                |
+| Caching             | Redis                                                 |
+| Messaging           | Apache Kafka                                          |
+| Reliability Pattern | Transactional Outbox                                  |
+| Event Consumer      | Spring Kafka `@KafkaListener`                         |
+| Testing             | JUnit, Testcontainers                                 |
+| CI                  | GitHub Actions                                        |
+| Observability       | Spring Boot Actuator, Micrometer, Prometheus, Grafana |
+| Documentation       | Swagger/OpenAPI                                       |
+| Containerization    | Docker, Docker Compose                                |
+| Build Tool          | Maven                                                 |
 
 ---
+
 ## System Architecture
 
 <p align="center">
   <img src="docs/screenshots/architecture-diagram.png" alt="Inventory Order Management API Architecture" width="1000"/>
 </p>
 
-
 ```text
 Client / Postman / Swagger
         |
         v
-Spring Boot REST Controllers
-        |
-        v
-Service Layer
+Order Management API :8080
         |
         +-----------------------------+
         |                             |
@@ -76,7 +77,25 @@ Apache Kafka
 order.created topic
         |
         v
-Downstream consumers
+Notification Service :8081
+Consumes order.created events
+```
+
+---
+
+## Distributed Event Flow
+
+```text
+1. Client submits an order using POST /api/orders
+2. Order Management API validates customer and product data
+3. PostgreSQL row-level locks prevent inventory overselling
+4. Order and order items are saved inside a database transaction
+5. An order-created event is saved into the outbox_events table
+6. Scheduled Outbox Publisher reads pending outbox events
+7. Event is published to Kafka topic: order.created
+8. Notification Service consumes the Kafka event
+9. Notification Service generates/logs an order confirmation notification
+10. Prometheus and Grafana monitor runtime metrics
 ```
 
 ---
@@ -93,7 +112,8 @@ Downstream consumers
 7. Order-created event is saved into outbox_events table
 8. Scheduled outbox publisher sends the event to Kafka
 9. Outbox event is marked as PUBLISHED
-10. Prometheus and Grafana monitor application metrics
+10. Notification Service consumes the order.created event from Kafka
+11. Prometheus and Grafana monitor application metrics
 ```
 
 ---
@@ -104,34 +124,38 @@ Downstream consumers
 
 The application supports product and customer management with validation, pagination, sorting, filtering, and clean error handling.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/products` | Create product |
-| GET | `/api/products` | Get all products |
-| GET | `/api/products/{productId}` | Get product by ID |
-| PUT | `/api/products/{productId}` | Update product |
-| DELETE | `/api/products/{productId}` | Delete product |
-| GET | `/api/products/category/{category}` | Get products by category |
-| GET | `/api/products/search?name=mouse` | Search products by name |
-| GET | `/api/products/low-stock?threshold=10` | Get low-stock products |
-| GET | `/api/products/paged?page=0&size=5&sortBy=productId&sortDirection=asc` | Get paginated products |
-| POST | `/api/customers` | Create customer |
-| GET | `/api/customers` | Get all customers |
-| GET | `/api/customers/{customerId}` | Get customer by ID |
-| PUT | `/api/customers/{customerId}` | Update customer |
-| DELETE | `/api/customers/{customerId}` | Delete customer |
+| Method | Endpoint                                                               | Description              |
+| ------ | ---------------------------------------------------------------------- | ------------------------ |
+| POST   | `/api/products`                                                        | Create product           |
+| GET    | `/api/products`                                                        | Get all products         |
+| GET    | `/api/products/{productId}`                                            | Get product by ID        |
+| PUT    | `/api/products/{productId}`                                            | Update product           |
+| DELETE | `/api/products/{productId}`                                            | Delete product           |
+| GET    | `/api/products/category/{category}`                                    | Get products by category |
+| GET    | `/api/products/search?name=mouse`                                      | Search products by name  |
+| GET    | `/api/products/low-stock?threshold=10`                                 | Get low-stock products   |
+| GET    | `/api/products/paged?page=0&size=5&sortBy=productId&sortDirection=asc` | Get paginated products   |
+| POST   | `/api/customers`                                                       | Create customer          |
+| GET    | `/api/customers`                                                       | Get all customers        |
+| GET    | `/api/customers/{customerId}`                                          | Get customer by ID       |
+| PUT    | `/api/customers/{customerId}`                                          | Update customer          |
+| DELETE | `/api/customers/{customerId}`                                          | Delete customer          |
+
+---
 
 ### 2. Transaction-Safe Order Placement
 
 Order placement runs inside a database transaction and protects inventory consistency.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/orders` | Place order |
-| GET | `/api/orders/{orderId}` | Get order by ID |
-| GET | `/api/orders/customer/{customerId}` | Get customer order history |
+| Method | Endpoint                            | Description                |
+| ------ | ----------------------------------- | -------------------------- |
+| POST   | `/api/orders`                       | Place order                |
+| GET    | `/api/orders/{orderId}`             | Get order by ID            |
+| GET    | `/api/orders/customer/{customerId}` | Get customer order history |
 
 Order placement validates the customer, validates each product, checks stock, deducts inventory, calculates order totals, saves order items, and rolls back if any step fails.
+
+---
 
 ### 3. Concurrency Handling
 
@@ -155,6 +179,8 @@ Final stock quantity: 0
 
 ![Concurrency final stock](docs/screenshots/concurrency-final-stock.png)
 
+---
+
 ### 4. Idempotent Order Creation
 
 The API supports an `Idempotency-Key` request header to prevent duplicate order creation when a client retries the same request.
@@ -172,6 +198,8 @@ Second request -> 200 OK with same orderId
 ```
 
 ![Idempotency duplicate order](docs/screenshots/idempotency-duplicate-order.png)
+
+---
 
 ### 5. Redis Caching
 
@@ -191,9 +219,11 @@ productById::3
 
 ![Redis cache key](docs/screenshots/redis-cache-key.png)
 
+---
+
 ### 6. Kafka Event Publishing
 
-When an order is placed, the system publishes an `order.created` event to Kafka.
+When an order is placed, the system publishes an `order.created` event to Kafka through the transactional outbox pattern.
 
 ```text
 Topic: order.created
@@ -222,6 +252,8 @@ Example event:
 ```
 
 ![Kafka order-created event](docs/screenshots/kafka-order-created-event.png)
+
+---
 
 ### 7. Transactional Outbox Pattern
 
@@ -253,7 +285,50 @@ LIMIT 5;
 
 ![Outbox event published](docs/screenshots/outbox-event-published.png)
 
-### 8. API Documentation with Swagger
+---
+
+### 8. Distributed Notification Service
+
+The project includes a separate `notification-service`, implemented as an independent Spring Boot application. It runs separately from the main Order Management API and consumes `order.created` events from Kafka.
+
+This proves asynchronous service-to-service communication:
+
+```text
+Order Management API
+        |
+        v
+Kafka topic: order.created
+        |
+        v
+Notification Service
+```
+
+Notification Service responsibilities:
+
+* Runs independently on port `8081`
+* Subscribes to Kafka topic `order.created`
+* Consumes order-created events using Spring Kafka
+* Parses event payload using Jackson
+* Generates/logs an order confirmation notification
+* Runs as a Docker container through Docker Compose
+
+Example consumed event log:
+
+```text
+NOTIFICATION SERVICE RECEIVED ORDER EVENT
+Order ID      : 10
+Customer ID   : 1
+Customer Name : John Smith Updated
+Order Status  : PLACED
+Total Amount  : 25.99
+Notification  : Order confirmation notification generated
+```
+
+![Notification service consumed event](docs/screenshots/notification-service-consumed-event.png)
+
+---
+
+### 9. API Documentation with Swagger
 
 Swagger/OpenAPI is enabled for API testing and documentation.
 
@@ -263,19 +338,25 @@ http://localhost:8080/swagger-ui.html
 
 ![Swagger API](docs/screenshots/swagger-api.png)
 
-### 9. CI Pipeline with GitHub Actions
+---
+
+### 10. CI Pipeline with GitHub Actions
 
 Every push to `main` runs a GitHub Actions workflow that builds the project and runs tests.
 
 ![GitHub Actions success](docs/screenshots/github-actions-success.png)
 
-### 10. Testcontainers Integration Testing
+---
+
+### 11. Testcontainers Integration Testing
 
 The project includes integration tests that run against a real PostgreSQL container using Testcontainers. This validates database connectivity, JPA mappings, repository behavior, and migration compatibility.
 
 ![Testcontainers build success](docs/screenshots/testcontainers-build-success.png)
 
-### 11. Observability with Prometheus and Grafana
+---
+
+### 12. Observability with Prometheus and Grafana
 
 Spring Boot Actuator exposes metrics through `/actuator/prometheus`. Prometheus scrapes those metrics, and Grafana visualizes request rate and JVM memory usage.
 
@@ -331,18 +412,21 @@ outbox_events.aggregate_id
         |
         v
 Kafka topic: order.created
+        |
+        v
+notification-service
 ```
 
 ---
 
 ## Flyway Migrations
 
-| Version | Description |
-|---|---|
-| V1 | Inventory schema |
-| V2 | PostgreSQL advanced features |
-| V3 | Add order idempotency key |
-| V4 | Create outbox events table |
+| Version | Description                  |
+| ------- | ---------------------------- |
+| V1      | Inventory schema             |
+| V2      | PostgreSQL advanced features |
+| V3      | Add order idempotency key    |
+| V4      | Create outbox events table   |
 
 ---
 
@@ -350,12 +434,12 @@ Kafka topic: order.created
 
 The project includes PostgreSQL-specific features beyond basic CRUD:
 
-- PL/pgSQL function
-- Database trigger
-- Database view
-- Automatic `updated_at` timestamp handling
-- Customer order summary reporting
-- Low-stock product reporting
+* PL/pgSQL function
+* Database trigger
+* Database view
+* Automatic `updated_at` timestamp handling
+* Customer order summary reporting
+* Low-stock product reporting
 
 V2 migration verification:
 
@@ -437,9 +521,9 @@ Idempotency-Key: order-001
 
 Install:
 
-- Java 17
-- Docker Desktop
-- Maven Wrapper is included in the project
+* Java 17
+* Docker Desktop
+* Maven Wrapper is included in the project
 
 ### 1. Clone Repository
 
@@ -448,23 +532,24 @@ git clone https://github.com/soundaryapoovaiah/inventory-order-management-api.gi
 cd inventory-order-management-api
 ```
 
-### 2. Start Infrastructure
+### 2. Start Infrastructure and Notification Service
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
 This starts:
 
 ```text
-PostgreSQL -> localhost:5432
-Redis      -> localhost:6379
-Kafka      -> localhost:9092
-Prometheus -> localhost:9090
-Grafana    -> localhost:3000
+PostgreSQL            -> localhost:5432
+Redis                 -> localhost:6379
+Kafka                 -> localhost:9092
+Notification Service  -> localhost:8081
+Prometheus            -> localhost:9090
+Grafana               -> localhost:3000
 ```
 
-### 3. Run Spring Boot App
+### 3. Run Main Order Management API
 
 On macOS/Linux:
 
@@ -478,16 +563,23 @@ On Windows PowerShell:
 .\mvnw spring-boot:run
 ```
 
+The main Order Management API runs on:
+
+```text
+http://localhost:8080
+```
+
 ### 4. Open Services
 
-| Service | URL |
-|---|---|
-| API Base URL | `http://localhost:8080` |
-| Swagger UI | `http://localhost:8080/swagger-ui.html` |
-| Actuator Health | `http://localhost:8080/actuator/health` |
-| Prometheus Metrics | `http://localhost:8080/actuator/prometheus` |
-| Prometheus UI | `http://localhost:9090/targets` |
-| Grafana UI | `http://localhost:3000` |
+| Service                     | URL                                         |
+| --------------------------- | ------------------------------------------- |
+| Order Management API        | `http://localhost:8080`                     |
+| Swagger UI                  | `http://localhost:8080/swagger-ui.html`     |
+| Order API Health            | `http://localhost:8080/actuator/health`     |
+| Notification Service Health | `http://localhost:8081/actuator/health`     |
+| Prometheus Metrics          | `http://localhost:8080/actuator/prometheus` |
+| Prometheus UI               | `http://localhost:9090/targets`             |
+| Grafana UI                  | `http://localhost:3000`                     |
 
 Grafana login:
 
@@ -504,6 +596,17 @@ Password: admin
 
 ```bash
 docker ps
+```
+
+Expected containers:
+
+```text
+inventory-postgres
+inventory-redis
+inventory-kafka
+inventory-notification-service
+inventory-prometheus
+inventory-grafana
 ```
 
 ### Check Redis Cache Keys
@@ -524,7 +627,19 @@ docker exec -it inventory-kafka /opt/kafka/bin/kafka-console-consumer.sh --boots
 docker exec -it inventory-postgres psql -U inventory_user -d inventory_db -c "SELECT aggregate_id, event_type, status, topic FROM outbox_events ORDER BY created_at DESC LIMIT 5;"
 ```
 
-### Run Tests
+### Watch Notification Service Logs
+
+```bash
+docker logs -f inventory-notification-service
+```
+
+After placing an order, the logs should show:
+
+```text
+NOTIFICATION SERVICE RECEIVED ORDER EVENT
+```
+
+### Run Main API Tests
 
 ```bash
 ./mvnw clean test -Dspring.docker.compose.enabled=false
@@ -536,53 +651,100 @@ On Windows PowerShell:
 .\mvnw clean test "-Dspring.docker.compose.enabled=false"
 ```
 
+### Run Notification Service Build
+
+```bash
+./mvnw -f notification-service/pom.xml clean package
+```
+
+On Windows PowerShell:
+
+```powershell
+.\mvnw -f notification-service/pom.xml clean package
+```
+
 ---
 
 ## Project Structure
 
 ```text
-src/main/java/microservices/postgresql
-├── config
-│   ├── JacksonConfig.java
-│   └── KafkaProducerConfig.java
-├── controller
-├── dto
-├── entity
-│   ├── Customer.java
-│   ├── CustomerOrder.java
-│   ├── OrderItem.java
-│   ├── OutboxEvent.java
-│   └── Product.java
-├── event
-│   └── OrderCreatedEvent.java
-├── exception
-├── messaging
-│   └── OutboxEventPublisher.java
-├── repository
-├── service
-└── PostgreSqlApplication.java
-
-src/main/resources
-├── db/migration
-│   ├── V1__inventory_schema.sql
-│   ├── V2__postgresql_advanced_features.sql
-│   ├── V3__add_order_idempotency_key.sql
-│   └── V4__create_outbox_events_table.sql
-└── application.properties
-
-monitoring
-└── prometheus.yml
-
-.github/workflows
-└── ci.yml
-
-docs
-└── screenshots
+inventory-order-management-api
+├── src
+│   └── main
+│       ├── java/microservices/postgresql
+│       │   ├── config
+│       │   │   ├── JacksonConfig.java
+│       │   │   └── KafkaProducerConfig.java
+│       │   ├── controller
+│       │   ├── dto
+│       │   ├── entity
+│       │   │   ├── Customer.java
+│       │   │   ├── CustomerOrder.java
+│       │   │   ├── OrderItem.java
+│       │   │   ├── OutboxEvent.java
+│       │   │   └── Product.java
+│       │   ├── event
+│       │   │   └── OrderCreatedEvent.java
+│       │   ├── exception
+│       │   ├── messaging
+│       │   │   └── OutboxEventPublisher.java
+│       │   ├── repository
+│       │   ├── service
+│       │   └── PostgreSqlApplication.java
+│       └── resources
+│           ├── db/migration
+│           │   ├── V1__inventory_schema.sql
+│           │   ├── V2__postgresql_advanced_features.sql
+│           │   ├── V3__add_order_idempotency_key.sql
+│           │   └── V4__create_outbox_events_table.sql
+│           └── application.properties
+│
+├── notification-service
+│   ├── Dockerfile
+│   ├── pom.xml
+│   └── src/main
+│       ├── java/microservices/notification
+│       │   ├── config
+│       │   │   └── KafkaConsumerConfig.java
+│       │   ├── NotificationServiceApplication.java
+│       │   └── OrderCreatedNotificationConsumer.java
+│       └── resources
+│           └── application.properties
+│
+├── monitoring
+│   └── prometheus.yml
+│
+├── .github/workflows
+│   └── ci.yml
+│
+├── docs
+│   └── screenshots
+│
+├── compose.yaml
+├── pom.xml
+└── README.md
 ```
 
 ---
+
+## Interview Talking Points
+
+This project can be used to discuss:
+
+* Why pessimistic locking is used for checkout inventory consistency
+* How idempotency keys prevent duplicate orders during client retries
+* Why Redis caching improves repeated product lookup performance
+* Why direct Kafka publishing can be unsafe without the outbox pattern
+* How the transactional outbox pattern improves reliability
+* How Kafka enables asynchronous service-to-service communication
+* How the Notification Service proves distributed event consumption
+* How Docker Compose runs infrastructure and downstream services locally
+* How Prometheus and Grafana support production observability
+* How Testcontainers improves integration test reliability
+
 ---
+
 ## Author
 
-**Soundarya Kookanda**  
-Java Backend Developer focused on Spring Boot, PostgreSQL, cloud-ready backend systems and AI-integrated enterprise applications.
+**Soundarya Kookanda**
+Java Backend Developer focused on Spring Boot, PostgreSQL, distributed backend systems, cloud-ready APIs, and AI-integrated enterprise applications.

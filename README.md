@@ -46,6 +46,12 @@ This is not only a CRUD API. It demonstrates backend engineering concepts that a
 ---
 
 ## System Architecture
+```md
+<p align="center">
+  <img src="docs/screenshots/architecture-diagram.png" alt="Inventory Order Management API Architecture" width="1000"/>
+</p>
+```
+
 
 ```text
 Client / Postman / Swagger

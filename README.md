@@ -1,6 +1,6 @@
 # Inventory Order Management API
 
-![Java CI](https://github.com/soundaryaapoovaiah/inventory-order-management-api/actions/workflows/ci.yml/badge.svg)
+![Java CI](https://github.com/soundaryapoovaiah/inventory-order-management-api/actions/workflows/ci.yml/badge.svg)
 
 Production-style Java backend project built with **Spring Boot, PostgreSQL, Redis, Kafka, Docker, Flyway, GitHub Actions, Testcontainers, Prometheus, Grafana, and a separate Notification Service**.
 

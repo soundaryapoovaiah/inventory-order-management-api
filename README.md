@@ -1,33 +1,52 @@
-# Inventory Order Management API
+# OrderFlow — Reliable Inventory & Order Processing Platform
 
 ![Java CI](https://github.com/soundaryapoovaiah/inventory-order-management-api/actions/workflows/ci.yml/badge.svg)
 
-Production-style Java backend project built with **Spring Boot, PostgreSQL, Redis, Kafka, Docker, Flyway, GitHub Actions, Testcontainers, Prometheus, Grafana, and a separate Notification Service**.
+> **A Java/Spring Boot backend designed to prevent inventory overselling, duplicate orders, and database-to-Kafka consistency failures under concurrent and failure-prone workloads.**
 
-This project started as an inventory and order management REST API and was upgraded into a distributed backend system that demonstrates real-world engineering patterns used in enterprise and large-scale systems: transaction-safe inventory updates, idempotent order creation, Redis caching, Kafka event publishing, transactional outbox, distributed Kafka event consumption, Dockerized service execution, CI validation, integration testing, and observability.
+OrderFlow models the backend of an e-commerce order-processing system where multiple customers may purchase the same limited inventory, clients may retry timed-out requests, and downstream messaging infrastructure may temporarily fail.
+The project focuses on the engineering problems behind reliable checkout rather than only CRUD functionality: concurrency control, transaction boundaries, idempotency, asynchronous event delivery, caching, integration testing, and production observability.
+
+---
+## The Business Problem
+
+A simple order API works well when requests arrive one at a time. Real checkout systems are more difficult.
+
+Consider a flash-sale scenario:
+
+- Only a small number of units remain in inventory.
+- Hundreds of customers attempt checkout concurrently.
+- Clients retry requests when responses time out.
+- PostgreSQL may successfully commit an order while Kafka is temporarily unavailable.
+- Frequently requested product data can create unnecessary database load.
+- Engineers need visibility into failures instead of relying only on application logs.
+
+Without explicit reliability controls, these scenarios can result in:
+
+- oversold inventory
+- duplicate orders
+- inconsistent downstream workflows
+- unnecessary database load
+- difficult-to-diagnose production failures
+
+OrderFlow is designed to explore and solve these failure modes using explicit consistency, concurrency, messaging, caching, testing, and observability patterns.
+
+## Engineering Goals
+
+| Engineering Problem | Approach |
+| --- | --- |
+| Concurrent customers purchasing limited inventory | PostgreSQL pessimistic row-level locking |
+| Client retries creating duplicate orders | Idempotency-Key based order creation |
+| Database commit and Kafka publication occurring independently | Transactional Outbox Pattern |
+| Repeated product lookups increasing database traffic | Redis caching |
+| Asynchronous downstream processing | Apache Kafka + Notification Service |
+| Database behavior difficult to validate with mocks | Testcontainers integration testing |
+| Limited production visibility | Spring Boot Actuator + Prometheus + Grafana |
+| Schema changes across environments | Flyway versioned migrations |
 
 ---
 
-## Why This Project Matters
-
-This is not only a CRUD API. It demonstrates backend engineering concepts that are expected in Java developer roles at Fortune 500 companies and large technology teams:
-
-* Transaction-safe order placement using PostgreSQL row-level locking
-* Duplicate order prevention using idempotency keys
-* Redis caching for high-read product lookup APIs
-* Kafka-based asynchronous event publishing
-* Transactional outbox pattern for reliable event delivery
-* Separate Notification Service consuming `order.created` events from Kafka
-* Dockerized distributed service setup using Docker Compose
-* PostgreSQL schema migrations using Flyway
-* Testcontainers integration testing with real PostgreSQL
-* GitHub Actions CI pipeline
-* Spring Boot Actuator, Prometheus, and Grafana observability
-* Swagger/OpenAPI API documentation
-
----
-
-## Tech Stack
+## Technology Stack
 
 | Area                | Technology                                            |
 | ------------------- | ----------------------------------------------------- |
@@ -41,7 +60,7 @@ This is not only a CRUD API. It demonstrates backend engineering concepts that a
 | Reliability Pattern | Transactional Outbox                                  |
 | Event Consumer      | Spring Kafka `@KafkaListener`                         |
 | Testing             | JUnit, Testcontainers                                 |
-| CI/CD               | GitHub Actions                                        |
+| CI                  | GitHub Actions                                        |
 | Observability       | Spring Boot Actuator, Micrometer, Prometheus, Grafana |
 | Documentation       | Swagger/OpenAPI                                       |
 | Containerization    | Docker, Docker Compose                                |
@@ -52,7 +71,7 @@ This is not only a CRUD API. It demonstrates backend engineering concepts that a
 ## System Architecture
 
 <p align="center">
-  <img src="docs/screenshots/architecture-diagram.png" alt="Inventory Order Management API Architecture" width="1000"/>
+  <img src="docs/screenshots/architecture-diagram.png" alt="OrderFlow System Architecture" width="1000"/>
 </p>
 
 ```text
@@ -97,8 +116,8 @@ Consumes order.created events
 5. Inventory is deducted safely
 6. Order and order items are saved
 7. Order-created event is saved into outbox_events table
-8. Scheduled outbox publisher sends the event to Kafka
-9. Outbox event is marked as PUBLISHED
+8. Scheduled outbox publisher attempts asynchronous delivery of pending events to Kafka
+9. After successful Kafka publication, the outbox event is marked as PUBLISHED
 10. Notification Service consumes the order.created event from Kafka
 11. Prometheus and Grafana monitor application metrics
 ```
@@ -150,7 +169,7 @@ The system prevents overselling during concurrent checkout requests using Postgr
 Optional<Product> findByIdForUpdate(@Param("productId") Long productId);
 ```
 
-Concurrency proof:
+Current manual concurrency verification:
 
 ```text
 Request 1: HTTP_STATUS:201
@@ -162,9 +181,9 @@ Final stock quantity: 0
 
 ![Concurrency final stock](docs/screenshots/concurrency-final-stock.png)
 
-### 4. Idempotent Order Creation
+### 4. Idempotent Checkout Requests
 
-The API supports an `Idempotency-Key` request header to prevent duplicate order creation when a client retries the same request.
+The checkout API accepts an `Idempotency-Key` request header so a client can safely retry a timed-out request without intentionally creating another order.
 
 ```http
 POST /api/orders
@@ -230,11 +249,14 @@ Example event:
 
 ![Kafka order-created event](docs/screenshots/kafka-order-created-event.png)
 
-### 7. Transactional Outbox Pattern
+### 7. Transactional Outbox for Database–Kafka Consistency
 
-The project uses the transactional outbox pattern to avoid inconsistencies between PostgreSQL and Kafka.
+Publishing directly to Kafka inside the order transaction creates a dual-write problem: PostgreSQL could commit successfully while Kafka publication fails.
 
-Instead of publishing directly to Kafka inside the order transaction, the application saves an event to the `outbox_events` table in the same transaction as the order. A scheduled publisher later reads pending outbox events, publishes them to Kafka, and marks them as `PUBLISHED`.
+OrderFlow therefore stores the order and its corresponding outbox event within the same PostgreSQL transaction. A background publisher later attempts to deliver pending events to Kafka.
+
+This removes Kafka publication from the checkout transaction and provides a durable record of business events that still need to be published.
+
 
 ```text
 Order transaction
@@ -264,7 +286,7 @@ LIMIT 5;
 
 The project includes a separate `notification-service`, implemented as an independent Spring Boot application. It runs separately from the main Order Management API and consumes `order.created` events from Kafka.
 
-This converts the project from a single backend API into an event-driven distributed system with asynchronous service-to-service communication.
+Keeping notification processing outside the checkout path reduces coupling between order creation and downstream work. The OrderFlow API publishes an order-created event, while the notification service processes that event independently.
 
 ```text
 Order Management API
@@ -716,4 +738,7 @@ README.md
 ## Author
 
 **Soundarya Kookanda**
-Java Backend Developer focused on Spring Boot, PostgreSQL, distributed backend systems, cloud-ready backend systems and AI-integrated enterprise applications.
+
+Java Backend Engineer focused on building reliable distributed systems with Java, Spring Boot, event-driven architecture, databases, cloud infrastructure, and production observability.
+
+[LinkedIn](https://www.linkedin.com/in/soundaryapoovaiah/) • [GitHub](https://github.com/soundaryapoovaiah)

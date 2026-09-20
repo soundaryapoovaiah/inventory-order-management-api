@@ -62,7 +62,7 @@ public class OrderCreatedNotificationConsumer {
                 log.info(
                         "Order notification processed eventId={} orderId={} " +
                                 "customerId={} customerName={} orderStatus={} totalAmount={}",
-                        eventId,
+                        eventIdValue,
                         orderId,
                         customerId,
                         customerName,

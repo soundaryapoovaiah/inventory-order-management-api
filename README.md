@@ -1,7 +1,12 @@
 # OrderFlow — Reliable Inventory & Order Processing Platform
 
-![Java CI](https://github.com/soundaryapoovaiah/inventory-order-management-api/actions/workflows/ci.yml/badge.svg)
+![Java CI](https://github.com/soundaryaapoovaiah/inventory-order-management-api/actions/workflows/ci.yml/badge.svg)
 
+<<<<<<< HEAD
+Production-style Java backend project built with **Spring Boot, PostgreSQL, Redis, Kafka, Docker, Flyway, GitHub Actions, Testcontainers, Prometheus, Grafana, and a separate Notification Service**.
+
+This project started as an inventory and order management REST API and was upgraded into a distributed backend system that demonstrates real-world engineering patterns used in enterprise and large-scale systems: transaction-safe inventory updates, idempotent order creation, Redis caching, Kafka event publishing, transactional outbox, distributed Kafka event consumption, Dockerized service execution, CI validation, integration testing, and observability.
+=======
 > **A Java/Spring Boot backend designed to prevent inventory overselling, duplicate orders, and database-to-Kafka consistency failures under concurrent and failure-prone workloads.**
 
 OrderFlow models the backend of an e-commerce order-processing system where multiple customers may purchase the same limited inventory, clients may retry timed-out requests, and downstream messaging infrastructure may temporarily fail.
@@ -43,11 +48,53 @@ OrderFlow is designed to explore and solve these failure modes using explicit co
 | Database behavior difficult to validate with mocks | Testcontainers integration testing |
 | Limited production visibility | Spring Boot Actuator + Prometheus + Grafana |
 | Schema changes across environments | Flyway versioned migrations |
+>>>>>>> origin/main
 
 ---
 
 ## Technology Stack
 
+<<<<<<< HEAD
+This is not only a CRUD API. It demonstrates backend engineering concepts that are expected in Java developer roles at Fortune 500 companies and large technology teams:
+
+* Transaction-safe order placement using PostgreSQL row-level locking
+* Duplicate order prevention using idempotency keys
+* Redis caching for high-read product lookup APIs
+* Kafka-based asynchronous event publishing
+* Transactional outbox pattern for reliable event delivery
+* Separate Notification Service consuming `order.created` events from Kafka
+* Dockerized distributed service setup using Docker Compose
+* PostgreSQL schema migrations using Flyway
+* Testcontainers integration testing with real PostgreSQL
+* GitHub Actions CI pipeline
+* Spring Boot Actuator, Prometheus, and Grafana observability
+* Swagger/OpenAPI API documentation
+
+---
+
+## Tech Stack
+
+| Area                | Technology                                            |
+| ------------------- | ----------------------------------------------------- |
+| Language            | Java 17                                               |
+| Backend             | Spring Boot, Spring Web, Spring Data JPA              |
+| Services            | Order Management API, Notification Service            |
+| Database            | PostgreSQL                                            |
+| Migration           | Flyway                                                |
+| Caching             | Redis                                                 |
+| Messaging           | Apache Kafka                                          |
+| Reliability Pattern | Transactional Outbox                                  |
+| Event Consumer      | Spring Kafka `@KafkaListener`                         |
+| Testing             | JUnit, Testcontainers                                 |
+| CI/CD               | GitHub Actions                                        |
+| Observability       | Spring Boot Actuator, Micrometer, Prometheus, Grafana |
+| Documentation       | Swagger/OpenAPI                                       |
+| Containerization    | Docker, Docker Compose                                |
+| Build Tool          | Maven                                                 |
+
+---
+
+=======
 | Area                | Technology                                            |
 | ------------------- | ----------------------------------------------------- |
 | Language            | Java 17                                               |
@@ -68,6 +115,7 @@ OrderFlow is designed to explore and solve these failure modes using explicit co
 
 ---
 
+>>>>>>> origin/main
 ## System Architecture
 
 <p align="center">
@@ -116,8 +164,13 @@ Consumes order.created events
 5. Inventory is deducted safely
 6. Order and order items are saved
 7. Order-created event is saved into outbox_events table
+<<<<<<< HEAD
+8. Scheduled outbox publisher sends the event to Kafka
+9. Outbox event is marked as PUBLISHED
+=======
 8. Scheduled outbox publisher attempts asynchronous delivery of pending events to Kafka
 9. After successful Kafka publication, the outbox event is marked as PUBLISHED
+>>>>>>> origin/main
 10. Notification Service consumes the order.created event from Kafka
 11. Prometheus and Grafana monitor application metrics
 ```
@@ -286,7 +339,11 @@ LIMIT 5;
 
 The project includes a separate `notification-service`, implemented as an independent Spring Boot application. It runs separately from the main Order Management API and consumes `order.created` events from Kafka.
 
+<<<<<<< HEAD
+This converts the project from a single backend API into an event-driven distributed system with asynchronous service-to-service communication.
+=======
 Keeping notification processing outside the checkout path reduces coupling between order creation and downstream work. The OrderFlow API publishes an order-created event, while the notification service processes that event independently.
+>>>>>>> origin/main
 
 ```text
 Order Management API
@@ -738,7 +795,11 @@ README.md
 ## Author
 
 **Soundarya Kookanda**
+<<<<<<< HEAD
+Java Backend Developer focused on Spring Boot, PostgreSQL, distributed backend systems, cloud-ready backend systems and AI-integrated enterprise applications.
+=======
 
 Java Backend Engineer focused on building reliable distributed systems with Java, Spring Boot, event-driven architecture, databases, cloud infrastructure, and production observability.
 
 [LinkedIn](https://www.linkedin.com/in/soundaryapoovaiah/) • [GitHub](https://github.com/soundaryapoovaiah)
+>>>>>>> origin/main

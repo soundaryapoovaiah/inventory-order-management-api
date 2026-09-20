@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import microservices.postgresql.entity.CustomerOrder;
 import microservices.postgresql.entity.OrderItem;
 import microservices.postgresql.entity.OutboxEvent;
+import microservices.postgresql.enums.OutboxStatus;
 import microservices.postgresql.event.OrderCreatedEvent;
 import microservices.postgresql.repository.OutboxEventRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,7 +48,7 @@ public class OutboxEventService {
                     .topic(orderCreatedTopic)
                     .eventKey(String.valueOf(order.getOrderId()))
                     .payload(payload)
-                    .status("PENDING")
+                    .status(OutboxStatus.PENDING)
                     .build();
 
             outboxEventRepository.save(outboxEvent);

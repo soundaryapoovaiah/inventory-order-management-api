@@ -10,8 +10,12 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import microservices.postgresql.enums.OutboxStatus;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Entity
@@ -45,11 +49,24 @@ public class OutboxEvent {
     @Column(name = "payload", nullable = false, columnDefinition = "TEXT")
     private String payload;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
-    private String status;
+    private OutboxStatus status;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "attempt_count", nullable = false)
+    private int attemptCount;
+
+    @Column(name = "next_attempt_at")
+    private LocalDateTime nextAttemptAt;
+
+    @Column(name = "last_attempt_at")
+    private LocalDateTime lastAttemptAt;
+
+    @Column(name = "processing_started_at")
+    private LocalDateTime processingStartedAt;
 
     @Column(name = "published_at")
     private LocalDateTime publishedAt;
@@ -63,21 +80,46 @@ public class OutboxEvent {
             eventId = UUID.randomUUID();
         }
         if (status == null) {
-            status = "PENDING";
+            status = OutboxStatus.PENDING;
         }
         if (createdAt == null) {
-            createdAt = LocalDateTime.now();
+            createdAt = LocalDateTime.now(ZoneOffset.UTC);
+        }
+        if (attemptCount < 0) {
+            attemptCount = 0;
         }
     }
 
     public void markPublished() {
-        this.status = "PUBLISHED";
-        this.publishedAt = LocalDateTime.now();
+        this.status = OutboxStatus.PUBLISHED;
+        this.publishedAt = LocalDateTime.now(ZoneOffset.UTC);
+        this.processingStartedAt = null;
+        this.nextAttemptAt = null;
         this.errorMessage = null;
     }
 
-    public void markFailed(String errorMessage) {
-        this.status = "FAILED";
-        this.errorMessage = errorMessage;
+    public void markProcessing() {
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+
+        this.status = OutboxStatus.PROCESSING;
+        this.attemptCount++;
+        this.lastAttemptAt = now;
+        this.processingStartedAt = now;
+        this.nextAttemptAt = null;
     }
+
+    public void scheduleRetry(String errorMessage, long delaySeconds) {
+        this.status = OutboxStatus.RETRY;
+        this.errorMessage = errorMessage;
+        this.nextAttemptAt = LocalDateTime.now(ZoneOffset.UTC).plusSeconds(delaySeconds);
+        this.processingStartedAt = null;
+    }
+
+    public void markDeadLetter(String errorMessage) {
+        this.status = OutboxStatus.DEAD_LETTER;
+        this.errorMessage = errorMessage;
+        this.nextAttemptAt = null;
+        this.processingStartedAt = null;
+    }
+
 }
